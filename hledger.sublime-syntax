@@ -1,0 +1,151 @@
+%YAML 1.2
+---
+# See http://www.sublimetext.com/docs/3/syntax.html
+name: hledger
+file_extensions:
+  - hledger
+  - journal
+scope: source.hledger
+version: 2
+
+variables:
+  indent: '(?: |\t)+'
+  double_sep: '(?:(?:  |\t)(?: |\t)*)'
+  currency_symbol: '(?:(?:[$€£¥¢])|(?:[a-zA-Z]+[a-zA-Z0-9]*)|(?:\"\w+\"))'
+  amount: '-?\d+(?:[ ,\.]\d{3})*(?:[,\.]\d{1,2})?'
+  date: '(?:\d{4}[-/\.])?(?:\d{1,2})[-/\.](?:\d{1,2})'
+  word: '(?:[^ \n]| (?! ))+'
+
+contexts:
+  eol_comments:
+    - match: '(?<!^)(?:  |\t)(?: |\t)*(;.*)$'
+      captures:
+        1: comment.line.semi-colon.hledger
+
+  main:
+    - include: transactions
+    - include: file_comments
+    - include: block_comments
+    - include: declarations
+    - include: directives
+
+  transactions:
+    - match: '^(?={{date}})'
+      push: transaction_first_line
+
+  transaction_first_line:
+    - match: '^({{date}})(?:(=)({{date}}))?\s+'
+      captures:
+        1: entity.name.tag.hledger
+        2: punctuation.separator.hledger
+        3: entity.name.tag.hledger
+      push: transaction_status
+    - include: eol_comments
+    - match: '$'
+      set: postings
+
+  transaction_status:
+    - match: '\*\s+'
+      push: transaction_cleared
+    - match: '\!\s+'
+      push: transaction_pending
+    - match: ''
+      push: transaction_uncleared
+
+  transaction_pop_from_status:
+    - match: '$'
+      pop: 2
+    - match: '(?={{double_sep}};)'
+      pop: 2
+
+  transaction_generic_first_line:
+    - include: transaction_code
+    - include: transaction_payee
+    - include: transaction_note
+    - include: transaction_pop_from_status
+
+  transaction_cleared:
+    - meta_scope: markup.bold.hledger
+    - include: transaction_generic_first_line
+
+  transaction_pending:
+    - meta_scope: markup.italic.hledger
+    - include: transaction_generic_first_line
+
+  transaction_uncleared:
+    - meta_scope: invalid.hledger
+    - include: transaction_generic_first_line
+
+  transaction_code:
+    - match: '\(\w+\)'
+      scope: markup.italic.hledger
+
+  transaction_payee:
+    - match: '(?<!\|)(?:[^\n\|; ]| (?! ))+'
+      scope: text.hledger
+
+  transaction_note:
+    - match: '(?<=\|)(?:[^\n\|; ]| (?! ))*'
+      scope: markup.italic.hledger text.hledger
+
+  postings:
+    - match: '^(?!{{indent}})'
+      pop: true
+    - include: file_comments
+    - match: '^{{indent}}(({{word}}){{double_sep}}=\s*{{currency_symbol}} {{amount}})'
+      captures:
+        1: markup.bold.hledger
+        2: entity.name.enum.hledger
+    - match: '^{{indent}}({{word}})(?:{{double_sep}}({{currency_symbol}} {{amount}}))?'
+      captures:
+        1: entity.name.enum.hledger
+        2: markup.bold.hledger
+    - include: eol_comments
+
+  file_comments:
+    - meta_include_prototype: false
+    - match: '^\s*[;\#\*].*$'
+      scope: comment.line.semi-colon.hledger
+
+  block_comments:
+    - meta_include_prototype: false
+    - match: '^comment$'
+      scope: keyword.context.block.hledger
+      push:
+        - meta_scope: comment.block.hledger
+        - match: '^end comment$'
+          scope: keyword.context.block.hledger
+          pop: true
+
+  declarations:
+    - match: '^(account){{word}}(\s*;.*)?$'
+      captures:
+        1: keyword.declaration.hledger
+        2: comment.line.semi-colon.hledger
+      push:
+        - meta_content_scope: comment.line.hledger
+        - match: '^(?!{{indent}})'
+          pop: true
+
+    - match: '^(payee|tag){{word}}'
+      captures:
+        1: keyword.declaration.hledger
+
+  directives:
+    - match: '^(include)({{word}})'
+      captures:
+        1: keyword.import.from.hledger
+        2: string.hledger
+    - match: '^((?:end )?(?:apply account|alias)){{word}}'
+      captures:
+        1: keyword.control.flow.hledger
+    - match: '^(commodity|D|decimal-mark)\b{{word}}'
+      captures:
+        1: keyword.declaration.hledger
+    - match: '^Y\d{4}'
+      scope: markup.bold.hledger
+    - match: '^(P) {{date}} ({{currency_symbol}}) ({{word}})'
+      captures:
+        1: keyword.declaration.hledger
+        2: entity.name.hledger
+        3: markup.bold.hledger
