@@ -28,23 +28,24 @@ variables:
 contexts:
   main:
     - include: transaction
+    - include: declaration
+    - include: directive
     - include: file-comment
-    - include: account-decl
-    - include: other-decl
-    - include: price
-    - include: directives
 
-  transaction:
-    - match: '^(?={{date_dash}}|{{date_slash}}|{{date_dot}})'
-      push: transaction-header
+  ###
+  # General purpose contexts
+  ###
 
+  # pop at next non-whitespace of end of line
   bail-out:
     - match: (?=\S|$)
       pop: true
+  # pop at end of line
   pop-at-eol:
     - match: $\n?
       pop: true
 
+  # comment at end of line without tags
   eol-comment:
     - match: ;
       scope: punctuation.definition.comment.begin.hledger
@@ -52,32 +53,91 @@ contexts:
         - meta_scope: comment.line.semi-colon.hledger
         - include: pop-at-eol
 
-  # parses the transaction from the beginning of the line
-  # other parts pop back to here, so when we see $, the line is done
-  # and we expect postings at the next lines
-  transaction-header:
-    - meta_content_scope: meta.transaction.header.hledger
-    - match: $\n?
-      set: posting-line
-    - match: ''
+  # transaction header; starts with a date in column 0
+  transaction:
+    - match: '^(?={{date_dash}}|{{date_slash}}|{{date_dot}})'
       push:
-        - comment-with-tags
-        - transaction-description
-        - transaction-code
-        - transaction-status
-        - transaction-aux-date
-        - transaction-date
+        # parses the transaction from the beginning of the line
+        # other parts pop back to here, so when we see $, the line is done
+        # and we expect postings at the next lines
+        - meta_content_scope: meta.transaction.hledger
+        - match: $\n?
+          set: posting-line
+        - match: ''
+          push:
+            - comment-with-tags
+            - transaction-description
+            - transaction-code
+            - transaction-status
+            - transaction-date
+
+  # declarations
+  declaration:
+    - match: '^(?=account\b)'
+      push:
+        - meta_scope: meta.declaration.account.hledger
+        - include: account-decl
+        - include: pop-at-eol
+    - match: '^(?=(?:payee|commodity|D|tag)\b)'
+      push:
+        - meta_scope: meta.declaration.hledger
+        - include: other-decl
+        - include: pop-at-eol
+
+  # directives
+  directive:
+    - match: ^(?=(?:P|include|alias|apply account)\b|Y\d{4})
+      push:
+        - meta_scope: meta.directive.hledger
+        - match: '^include\b'
+          scope: keyword.import.hledger
+          push:
+            - match: .*$
+              scope: string.other.hledger
+              pop: true
+        - match: ^(Y)(\d{4})
+          captures:
+            1: keyword.declaration.year.hledger
+            2: string.other.date.hledger
+          push:
+            - include: eol-comment
+            - include: bail-out
+        - match: '^P\b'
+          scope: keyword.declaration.price.hledger
+          push:
+            - match: '(?:{{date_dash}}|{{date_slash}}|{{date_dot}})'
+              scope: string.other.date.hledger
+              set:
+                - include: highlight-commodity
+                - include: highlight-amount
+                - include: eol-comment
+                - include: bail-out
+            - include: bail-out
+        - include: bail-out
+
+  # file comments
+  file-comment:
+    - match: '^(?=\s*[;#*]|comment)'
+      push:
+        - meta_scope: meta.comment.hledger
+        - match: ^\s*[;#*]
+          scope: punctuation.definition.comment.begin.hledger
+          push:
+            - meta_scope: comment.line.semi-colon.hledger
+            - match: $
+              pop: 2
+        - match: '^comment$'
+          push:
+            - meta_scope: comment.block.hledger
+            - match: ^end comment$
+              pop: 2
+
 
   transaction-date:
     - match: '(?:{{date_dash}}|{{date_slash}}|{{date_dot}})'
       scope: string.other.date.hledger
-    - include: bail-out
-
-  transaction-aux-date:
     - match: '='
       scope: keyword.operator.hledger
-    - match: '(?:{{date_dash}}|{{date_slash}}|{{date_dot}})'
-      scope: string.other.date.hledger
     - include: bail-out
 
   transaction-status:
@@ -160,15 +220,7 @@ contexts:
     - include: bail-out
 
   highlight-amount:
-    - match: '{{amount_sci}}'
-      scope: constant.numeric.value.hledger
-    - match: '{{amount_dot}}'
-      scope: constant.numeric.value.hledger
-    - match: '{{amount_comma}}'
-      scope: constant.numeric.value.hledger
-    - match: '{{amount_space}}'
-      scope: constant.numeric.value.hledger
-    - match: '{{amount_no_sep}}'
+    - match: '(?:{{amount_sci}}|{{amount_dot}}|{{amount_comma}}|{{amount_space}}|{{amount_no_sep}})'
       scope: constant.numeric.value.hledger
 
   highlight-commodity:
@@ -185,41 +237,22 @@ contexts:
           pop: true
         - include: pop-at-eol
 
-  file-comment:
-    - match: '^\s*[;#*]'
-      scope: punctuation.definition.comment.begin.hledger
-      push:
-        - meta_scope: comment.line.semi-colon.hledger
-        - match: $
-          pop: true
-    - match: '^comment$'
-      push:
-        - meta_scope: comment.block.hledger
-        - match: ^end comment$
-          pop: true
-
   account-decl:
-    - match: ^(?=account\b)
+    - match: ^account\b
+      scope: keyword.declaration.account.hledger
+    - match: $\n?
       push:
-        - meta_scope: meta.declaration.account.hledger
-        - match: ^account\s*
-          scope: keyword.declaration.account.hledger
-          push:
-            - match: '(?:[^\n\t ]| (?! |$|;))+'
-              scope: meta.index.account.hledger entity.name.account.hledger
-            - match: (  |\t)
-              set:
-                - include: comment-with-tags
-                - include: bail-out
-            - include: bail-out
-        - match: '$\n?'
-          push:
-            - match: '^(?!  |\t)'
-              pop: 2
-            - include: comment-with-tags
-            - match: '^(  |\t).*$'
-              scope: comment.line.hledger
-              pop: 2
+        - match: ^(?!  |\t)
+          pop: 2
+        - match: \s*
+        - include: comment-with-tags
+        - match: .*$
+          scope: comment.line.hledger
+
+    - include: comment-with-tags
+    - match: \s*((?:[^\n\t ]| (?! ))*)\s*
+      captures:
+        1: meta.index.account.hledger entity.name.account.hledger
 
   other-decl:
     - match: ^payee\b
@@ -235,7 +268,7 @@ contexts:
       push:
         - match: '\s*([^;]*)\s*'
           captures:
-            1: meta.index.tag.hledger entity.name.tag.hledger
+            1: meta.index.tag.hledger entity.name.htag.hledger
         - include: eol-comment
         - include: pop-at-eol
     - match: ^(?:commodity|D)\b
@@ -249,29 +282,3 @@ contexts:
       captures:
         1: keyword.declaration.decimal-mark.hledger
         2: punctuation.definition.keyword.hledger
-
-  price:
-    - match: '^P\b'
-      scope: keyword.declaration.price.hledger
-      push:
-        - match: '(?:{{date_dash}}|{{date_slash}}|{{date_dot}})'
-          scope: string.other.date.hledger
-          set:
-            - include: highlight-commodity
-            - include: highlight-amount
-            - include: eol-comment
-            - include: bail-out
-  directives:
-    - match: '^include\b'
-      scope: keyword.import.hledger
-      push:
-        - match: .*$
-          scope: string.other.hledger
-          pop: true
-    - match: ^(Y)(\d{4})
-      captures:
-        1: keyword.declaration.year.hledger
-        2: string.other.date.hledger
-      push:
-        - include: eol-comment
-        - include: bail-out
