@@ -1,0 +1,11 @@
+{
+	"scope": "source.hledger - meta",
+
+	"completions": [
+		{ "trigger": "account\taccount declaration", "contents": "account $0" },
+		{ "trigger": "payee\tpayee declaration", "contents": "payee $0" },
+		{ "trigger": "commodity\tcommodity declaration", "contents": "commodity $0" },
+		{ "trigger": "tag\ttag declaration", "contents": "tag $0" },
+		{ "trigger": "include\tinclude directive", "contents": "include \"$0\"" },
+	]
+}

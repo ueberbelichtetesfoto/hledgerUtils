@@ -1,0 +1,10 @@
+<snippet>
+	<content><![CDATA[
+P ${1:date} "${2:symbol}" ${3:price}$0
+]]></content>
+	<!-- Optional: Set a tabTrigger to define how to trigger the snippet -->
+	<tabTrigger>price</tabTrigger>
+	<!-- Optional: Set a scope to limit where the snippet will trigger -->
+	<scope>source.hledger - meta</scope>
+	<description>New price entry</description>
+</snippet>
